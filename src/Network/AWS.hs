@@ -94,28 +94,29 @@ import           Network.AWS.Auth
 import           Network.AWS.Internal
 import           Network.HTTP.Conduit
 import           System.IO
+import           UnexceptionalIO                       (Unexceptional)
 
 type AWSEnv = InternalState -> Env
 
 runAWS :: Credentials -> Bool -> AWS a -> IO (Either AWSError a)
 runAWS cred dbg aws =
-    runEitherT (loadAWSEnv cred dbg) >>=
+    runExceptT (loadAWSEnv cred dbg) >>=
         either (return . Left . toError)
                (`runAWSEnv` aws)
 
 runAWSEnv :: AWSEnv -> AWS a -> IO (Either AWSError a)
 runAWSEnv f aws = runResourceT . withInternalState $ \s -> runEnv (f s) aws
 
-loadAWSEnv :: (Applicative m, MonadIO m)
+loadAWSEnv :: (Applicative m, MonadIO m, Unexceptional m)
            => Credentials
            -> Bool
-           -> EitherT String m AWSEnv
+           -> ExceptT String m AWSEnv
 loadAWSEnv cred dbg = Env defaultRegion dbg
     <$> liftIO (newManager conduitManagerSettings)
     <*> credentials cred
 
 runEnv :: Env -> AWS a -> IO (Either AWSError a)
-runEnv env aws = runEitherT $ runReaderT (unwrap aws) env
+runEnv env aws = runExceptT $ runReaderT (unwrap aws) env
 
 -- | Run an 'AWS' operation inside a specific 'Region'.
 within :: Region -> AWS a -> AWS a
@@ -124,7 +125,7 @@ within reg = AWS . local (\e -> e { awsRegion = reg }) . unwrap
 hoistError :: (MonadError e m, Error e) => Either e a -> m a
 hoistError = either throwError return
 
-liftEitherT :: ToError e => EitherT e IO a -> AWS a
+liftEitherT :: ToError e => ExceptT e IO a -> AWS a
 liftEitherT = AWS . lift . fmapLT toError
 
 -- | Send a request and return the associated response type.
@@ -169,7 +170,7 @@ paginate :: (Rq a, Pg a, ToError (Er a))
          -> Source AWS (Rs a)
 paginate rq = paginateCatch rq $= awaitForever go
   where
-    go (Left  e) = lift . liftEitherT . left $ toError e
+    go (Left  e) = lift . liftEitherT . throwE $ toError e
     go (Right x) = yield x
 
 paginateCatch :: (Rq a, Pg a, ToError (Er a))
@@ -195,7 +196,7 @@ resourceAsync (ResourceT f) = liftResourceT . ResourceT $ \g -> Lifted.mask $ \h
             (stateCleanup ReleaseNormal g)
             (h $ f g))
 
-requestBodyFile :: MonadIO m => FilePath -> m (Maybe RequestBody)
+requestBodyFile :: (MonadIO m, Unexceptional m) => FilePath -> m (Maybe RequestBody)
 requestBodyFile f = runMaybeT $ do
     n <- join . hushT $ syncIO getFileSize
     return . requestBodySource n $ Conduit.sourceFile f

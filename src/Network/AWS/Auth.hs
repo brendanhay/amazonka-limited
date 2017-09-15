@@ -34,6 +34,7 @@ import           Data.Time
 import           Network.AWS.EC2.Metadata
 import           Network.AWS.Internal       hiding (Env)
 import           System.Environment
+import           UnexceptionalIO            (Unexceptional)
 
 data Credentials
     = AuthBasic Text Text
@@ -68,9 +69,9 @@ accessKey = "AWS_ACCESS_KEY"
 secretKey :: Text
 secretKey = "AWS_SECRET_KEY"
 
-credentials :: (Applicative m, MonadIO m)
+credentials :: (Applicative m, MonadIO m, Unexceptional m)
             => Credentials
-            -> EitherT String m (IORef Auth)
+            -> ExceptT String m (IORef Auth)
 credentials = mk
   where
     mk (AuthBasic   a s)   = ref $ Auth a s Nothing Nothing
@@ -89,7 +90,7 @@ credentials = mk
 
     ref = liftIO . newIORef
 
-defaultProfile :: (Applicative m, MonadIO m) => EitherT String m Text
+defaultProfile :: (Applicative m, MonadIO m, Unexceptional m) => ExceptT String m Text
 defaultProfile = do
     ls <- BS.lines <$> meta (IAM $ SecurityCredentials Nothing)
     p  <- tryHead "Unable to get default IAM Profile from metadata" ls
@@ -101,9 +102,9 @@ defaultProfile = do
 --
 -- The forked timer ensures a singular owner and pre-emptive refresh of the
 -- temporary session credentials.
-fromProfile :: (Applicative m, MonadIO m)
+fromProfile :: (Applicative m, MonadIO m, Unexceptional m)
             => Text
-            -> EitherT String m (IORef Auth)
+            -> ExceptT String m (IORef Auth)
 fromProfile name = do
     !a@Auth{..} <- auth
     fmapLT show . syncIO . liftIO $ do
@@ -111,7 +112,7 @@ fromProfile name = do
         start ref expiration
         return ref
   where
-    auth :: (Applicative m, MonadIO m) => EitherT String m Auth
+    auth :: (Applicative m, MonadIO m, Unexceptional m) => ExceptT String m Auth
     auth = do
         m <- LBS.fromStrict <$> meta (IAM . SecurityCredentials $ Just name)
         hoistEither $ Aeson.eitherDecode m
@@ -124,6 +125,6 @@ fromProfile name = do
     -- remove the error . show shenanigans
     timer ref n = void . forkIO $ do
         threadDelay $ (n - 60) * 1000000
-        !a@Auth{..} <- eitherT (error . show) return auth
+        !a@Auth{..} <- exceptT (error . show) return auth
         atomicWriteIORef ref a
         start ref expiration

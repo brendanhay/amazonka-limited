@@ -1,0 +1,7 @@
+resolver: lts-6.31
+packages:
+- '.'
+extra-deps:
+  - either-4.3.4.1
+  - exceptions-0.6.1
+  - querystring-pickle-0.2.0

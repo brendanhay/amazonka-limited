@@ -25,17 +25,16 @@ import           Data.ByteString       (ByteString)
 import qualified Data.ByteString.Char8 as BS
 import           Data.Time             (UTCTime)
 import qualified Data.Time             as Time
-import           System.Locale
 
 formatRFC822, formatISO8601, formatAWS, formatBasic :: UTCTime -> ByteString
 formatRFC822  = formatTime "%a, %d %b %Y %H:%M:%S GMT"
-formatISO8601 = formatTime (iso8601DateFormat $ Just "%XZ")
+formatISO8601 = formatTime (Time.iso8601DateFormat $ Just "%XZ")
 formatAWS     = formatTime "%Y%m%dT%H%M%SZ"
 formatBasic   = formatTime "%Y%m%d"
 
 parseISO8601 :: String -> Either String UTCTime
 parseISO8601 = note "unable to parse ISO8601 time"
-    . Time.parseTime defaultTimeLocale "%FT%T%QZ"
+    . Time.parseTimeM False Time.defaultTimeLocale "%FT%T%QZ"
 
 formatTime :: String -> UTCTime -> ByteString
-formatTime fmt = BS.pack . Time.formatTime defaultTimeLocale fmt
+formatTime fmt = BS.pack . Time.formatTime Time.defaultTimeLocale fmt

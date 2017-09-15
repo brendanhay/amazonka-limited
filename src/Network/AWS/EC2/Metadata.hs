@@ -30,6 +30,7 @@ import           GHC.Generics
 import           Network.AWS.Internal.String
 import           Network.HTTP.Conduit
 import           Network.HTTP.Types   (status404)
+import           UnexceptionalIO      (Unexceptional)
 
 class ToPath a where
     toPath :: a -> Text
@@ -253,9 +254,9 @@ instance ToPath Info where
     toPath Info                    = "info"
     toPath (SecurityCredentials r) = "security-credentials/" <> fromMaybe "" r
 
-ec2 :: (Functor m, MonadIO m) => m Bool
+ec2 :: (Functor m, MonadIO m, Unexceptional m) => m Bool
 ec2 = fmap isRight
-    . runEitherT
+    . runExceptT
     . syncIO
     $ simpleHttp "http://instance-data/latest"
 
@@ -268,16 +269,16 @@ user = liftIO $ EX.catch (Just <$> simpleHttp url) ex
         | status404 == s = return Nothing
     ex e                 = EX.throw e
 
-meta :: (Functor m, MonadIO m) => Meta -> EitherT String m ByteString
+meta :: (Functor m, MonadIO m, Unexceptional m) => Meta -> ExceptT String m ByteString
 meta = get "http://169.254.169.254/latest/meta-data/"
 
-dynamic :: (Functor m, MonadIO m) => Dynamic -> EitherT String m ByteString
+dynamic :: (Functor m, MonadIO m, Unexceptional m) => Dynamic -> ExceptT String m ByteString
 dynamic = get "http://169.254.169.254/latest/dynamic/"
 
-get :: (Functor m, MonadIO m, ToPath a)
+get :: (Functor m, MonadIO m, Unexceptional m, ToPath a)
     => Text
     -> a
-    -> EitherT String m ByteString
+    -> ExceptT String m ByteString
 get base p = do
     rs <- fmapLT show
         . syncIO
